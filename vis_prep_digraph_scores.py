@@ -16,6 +16,30 @@ def load_key_locations():
     ]
     return {char: id for id, char in key_locations}
 
+def normalize_scores(scores, target_min=1, target_max=100):
+    """
+    Normalize scores to integer values within specified range
+    
+    Args:
+        scores: Array of comfort scores
+        target_min: Minimum value for normalized scores
+        target_max: Maximum value for normalized scores
+    """
+    # Handle negative values by shifting everything to positive
+    min_score = min(scores)
+    if min_score < 0:
+        scores = [s - min_score for s in scores]
+    
+    # Normalize to [0, 1] range
+    min_score = min(scores)
+    max_score = max(scores)
+    normalized = [(s - min_score) / (max_score - min_score) for s in scores]
+    
+    # Scale to target range and convert to integers
+    scaled = [int(round(n * (target_max - target_min) + target_min)) for n in normalized]
+    
+    return scaled
+
 def process_bigram_scores(input_file, output_file):
     """
     Process bigram comfort scores and output in the keypairtimes format
@@ -33,25 +57,35 @@ def process_bigram_scores(input_file, output_file):
     # Initialize output data
     output_data = []
     
-    # Process each bigram
+    # Extract comfort scores for normalization
+    valid_scores = []
+    valid_rows = []
+    
+    # First pass to collect valid scores
     for _, row in df.iterrows():
         first_char = row['first_char'].lower()
         second_char = row['second_char'].lower()
-        comfort_score = row['comfort_score']
         
-        # Skip if either character is not in our key mapping
-        if first_char not in key_map or second_char not in key_map:
-            continue
-            
-        # Get the key IDs
+        # Only include scores where both characters are in our mapping
+        if first_char in key_map and second_char in key_map:
+            valid_scores.append(row['comfort_score'])
+            valid_rows.append(row)
+    
+    # Normalize the scores
+    normalized_scores = normalize_scores(valid_scores)
+    
+    # Second pass to create output with normalized scores
+    for score, row in zip(normalized_scores, valid_rows):
+        first_char = row['first_char'].lower()
+        second_char = row['second_char'].lower()
+        
         origin_id = key_map[first_char]
         dest_id = key_map[second_char]
         
-        # Add to output data
         output_data.append({
             'origin': origin_id,
             'dest': dest_id,
-            'count': comfort_score
+            'count': score
         })
     
     # Convert to DataFrame and sort
@@ -69,4 +103,5 @@ if __name__ == "__main__":
     
     result_df = process_bigram_scores(input_file, output_file)
     print(f"Processed {len(result_df)} bigram pairs")
+    print(f"Score range: {result_df['count'].min()} to {result_df['count'].max()}")
     print(f"Output saved to {output_file}")
